@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Fourier Epicycles Art with Equation</title>
+    <title>Fourier Epicycles Art for WolframAlpha</title>
     <style>
         body {
             margin: 0;
@@ -33,7 +33,7 @@
             border-radius: 6px;
         }
         #sidebar {
-            width: 320px;
+            width: 380px;
             height: 600px;
             display: flex;
             flex-direction: column;
@@ -48,7 +48,6 @@
             font-size: 13px;
             color: #888;
         }
-        /* コピペを絶対成功させるためにtextareaに変更 */
         #equation-box {
             flex-grow: 1;
             background: #050505;
@@ -56,11 +55,11 @@
             border-radius: 6px;
             padding: 15px;
             font-family: 'Courier New', Courier, monospace;
-            font-size: 13px;
+            font-size: 12px;
             color: #00ff66;
-            resize: none; /* サイズ変更を禁止 */
+            resize: none;
             outline: none;
-            line-height: 1.5;
+            line-height: 1.4;
             user-select: text !important;
             -webkit-user-select: text !important;
         }
@@ -76,13 +75,13 @@
     <div id="container">
         <div>
             <h3>Fourier Epicycles Art</h3>
-            <p>キャンバスをドラッグして一筆書きで絵を描こう（クリックで引き直し）</p>
+            <p>ドラッグで描画（クリックで引き直し）</p>
             <canvas id="canvas" width="600" height="600"></canvas>
         </div>
         
         <div id="sidebar">
-            <div class="eq-title">📊 リアルタイムフーリエ数式</div>
-            <textarea id="equation-box" readonly>絵を描くとここに数式が表示されます。枠内をクリックしてコピー可能です。</textarea>
+            <div class="eq-title">📊 Wolfram|Alpha 入力用数式</div>
+            <textarea id="equation-box" readonly>絵を描くとここにWolfram|Alpha用のコマンドが生成されます。クリックで全選択してコピペしてください。</textarea>
         </div>
     </div>
 
@@ -123,7 +122,7 @@ function resetSystem() {
     path = [];
     time = 0;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    equationBox.value = "絵を描くとここに数式が表示されます。枠内をクリックしてコピー可能です。";
+    equationBox.value = "絵を描くとここにWolfram|Alpha用のコマンドが生成されます。";
 }
 
 canvas.addEventListener('mousedown', (e) => {
@@ -160,8 +159,8 @@ window.addEventListener('mouseup', () => {
     isDrawing = false;
     
     if (rawPoints.length > 2) {
-        if (rawPoints.length > 200) { 
-            const step = Math.ceil(rawPoints.length / 200);
+        if (rawPoints.length > 150) { 
+            const step = Math.ceil(rawPoints.length / 150);
             rawPoints = rawPoints.filter((_, i) => i % step === 0);
         }
         fourierX = dft(rawPoints);
@@ -170,21 +169,27 @@ window.addEventListener('mouseup', () => {
     }
 });
 
-function drawEpicycles(x, y, fourier) {
-    let eqX = "f(t) = \n  ";
-    let isFirstParam = true;
+function drawEpicycles(startX, startY, fourier) {
+    let currentX = startX;
+    let currentY = startY;
+
+    // WolframAlpha用の文字列構築（文字数制限を考慮し主要な上位8つの波に絞る）
+    let wolframX = "";
+    let wolframY = "";
+    let count = 0;
 
     for (let i = 0; i < fourier.length; i++) {
-        const prevX = x;
-        const prevY = y;
+        const prevX = currentX;
+        const prevY = currentY;
         const { freq, amp, phase } = fourier[i];
         
+        // 描画ロジック（Y軸反転を考慮）
         if (freq === 0) {
-            x += amp * Math.cos(phase);
-            y += amp * Math.sin(phase);
+            currentX += amp * Math.cos(phase);
+            currentY += amp * Math.sin(phase);
         } else {
-            x += amp * Math.cos(freq * time + phase);
-            y += amp * Math.sin(freq * time + phase);
+            currentX += amp * Math.cos(freq * time + phase);
+            currentY += amp * Math.sin(freq * time + phase);
         }
 
         if (freq !== 0 && amp > 0.5) {
@@ -196,27 +201,35 @@ function drawEpicycles(x, y, fourier) {
             ctx.strokeStyle = 'rgba(0, 150, 255, 0.3)';
             ctx.beginPath();
             ctx.moveTo(prevX, prevY);
-            ctx.lineTo(x, y);
+            ctx.lineTo(currentX, currentY);
             ctx.stroke();
         }
 
-        if (amp > 1.5 && i < 15) {
+        // Wolfram|Alpha用の丁寧な数式生成 (主要な最大8項まで。多すぎると文字数制限で弾かれます)
+        if (amp > 1.0 && count < 8) {
             const ampStr = amp.toFixed(1);
-            const freqStr = freq === 0 ? "" : `*${freq}t`;
+            const freqStr = freq === 0 ? "" : `${freq}*t`;
             const phaseStr = phase >= 0 ? `+${phase.toFixed(2)}` : `${phase.toFixed(2)}`;
             
-            if (!isFirstParam) eqX += "\n+ ";
-            eqX += `${ampStr} * cis(${freqStr}${phaseStr})`;
-            isFirstParam = false;
+            // Xの式 (cos)
+            const termX = freq === 0 ? `${ampStr}*cos(${phaseStr})` : `${ampStr}*cos(${freqStr}${phaseStr})`;
+            wolframX += (wolframX === "") ? termX : ` + ${termX}`;
+
+            // Yの式 (sin) - 通常の数学座標系に合わせるためYはマイナスに
+            const termY = freq === 0 ? `-${ampStr}*sin(${phaseStr})` : `-${ampStr}*sin(${freqStr}${phaseStr})`;
+            wolframY += (wolframY === "") ? termY : ` + ${termY}`;
+            
+            count++;
         }
     }
 
-    // 更新前の選択状態（カーソル位置など）を極力壊さないよう、値が変わった時だけ代入
-    const finalTxt = eqX + "\n+ ... (以下省略)";
+    // Wolfram|AlphaのParametric Plot文法に統合
+    const finalTxt = `parametric plot (${wolframX}, ${wolframY}) for t=0 to 2*pi`;
+    
     if (equationBox.value !== finalTxt && document.activeElement !== equationBox) {
         equationBox.value = finalTxt;
     }
-    return { x, y };
+    return { x: currentX, y: currentY };
 }
 
 function animate() {
@@ -247,7 +260,6 @@ function animate() {
     animationFrameId = requestAnimationFrame(animate);
 }
 
-// ボックスをクリックしたときに自動で全選択される便利機能を追加
 equationBox.addEventListener('focus', () => {
     equationBox.select();
 });
