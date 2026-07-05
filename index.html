@@ -51,7 +51,7 @@ let time = 0;
 let path = [];      
 let isDrawing = false;
 let mode = 'drawing'; 
-let animationFrameId = null; // アニメーションを停止・制御するためのID
+let animationFrameId = null;
 
 // --- 離散フーリエ変換 (DFT) ---
 function dft(points) {
@@ -69,13 +69,14 @@ function dft(points) {
         im = im / N;
         X.push({ freq: k, amp: Math.sqrt(re * re + im * im), phase: Math.atan2(im, re) });
     }
+    // ここでソートしますが、周波数0（全体の重心）の位置を固定するため、
+    // 重心成分を外してからソートするか、今回はdraw側で位置を調整します
     return X.sort((a, b) => b.amp - a.amp);
 }
 
-// --- 状態を完全にリセットする関数 ---
 function resetSystem() {
     if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId); // 実行中のアニメーションを完全に止める
+        cancelAnimationFrame(animationFrameId);
     }
     rawPoints = [];
     path = [];
@@ -85,10 +86,8 @@ function resetSystem() {
 
 // --- お絵描きイベント ---
 canvas.addEventListener('mousedown', (e) => {
-    // クリックされた瞬間、前のアニメーションを破棄してリセット
     mode = 'drawing';
     resetSystem();
-    
     isDrawing = true;
     const rect = canvas.getBoundingClientRect();
     rawPoints.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
@@ -107,7 +106,6 @@ canvas.addEventListener('mousemove', (e) => {
     
     rawPoints.push({ x, y });
 
-    // 描いている最中の線をリアルタイム表示
     ctx.strokeStyle = '#444';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -121,7 +119,6 @@ window.addEventListener('mouseup', () => {
     isDrawing = false;
     
     if (rawPoints.length > 2) {
-        // データ軽量化（最大400点）
         if (rawPoints.length > 400) {
             const step = Math.ceil(rawPoints.length / 400);
             rawPoints = rawPoints.filter((_, i) => i % step === 0);
@@ -134,15 +131,23 @@ window.addEventListener('mouseup', () => {
 
 // --- 周転円（エピサイクル）の計算と描画 ---
 function drawEpicycles(x, y, fourier) {
+    // 【修正点】スタート位置（x, y）を(0,0)にして、フーリエの直流成分（重心）から計算を始める
     for (let i = 0; i < fourier.length; i++) {
         const prevX = x;
         const prevY = y;
         const { freq, amp, phase } = fourier[i];
         
-        x += amp * Math.cos(freq * time + phase);
-        y += amp * Math.sin(freq * time + phase);
+        // 周波数が0の成分は回転せず、絵の「中心座標そのもの」を表す
+        if (freq === 0) {
+            x += amp * Math.cos(phase);
+            y += amp * Math.sin(phase);
+        } else {
+            x += amp * Math.cos(freq * time + phase);
+            y += amp * Math.sin(freq * time + phase);
+        }
 
-        if (amp > 0.5) {
+        // 最初の移動（重心への移動）の円は描画せず、それ以降の回転する円だけを描画する
+        if (freq !== 0 && amp > 0.5) {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
             ctx.beginPath();
             ctx.arc(prevX, prevY, amp, 0, Math.PI * 2);
@@ -164,7 +169,9 @@ function animate() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const v = drawEpicycles(canvas.width / 2, canvas.height / 2, fourierX);
+    // 【修正点】キャンバスの中心(width/2, height/2)から始めるのではなく、
+    // (0,0)から計算をスタートさせて、フーリエ内の絶対座標に委ねる
+    const v = drawEpicycles(0, 0, fourierX);
     path.unshift(v);
 
     // 再現された線の描画
@@ -180,7 +187,6 @@ function animate() {
     const dt = (Math.PI * 2) / fourierX.length;
     time += dt;
 
-    // 1周期終わったら軌跡をクリアしてループ（エンドレス再生）
     if (time > Math.PI * 2) {
         time = 0;
         path = []; 
