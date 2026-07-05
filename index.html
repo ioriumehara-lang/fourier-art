@@ -15,6 +15,7 @@
             justify-content: center;
             height: 100vh;
             overflow: hidden;
+            user-select: none; /* 画面全体の誤選択を防ぐ */
         }
         #container {
             display: flex;
@@ -59,6 +60,9 @@
             overflow-y: auto;
             white-space: pre-wrap;
             line-height: 1.5;
+            /* コピペを可能にする設定 */
+            user-select: text !important;
+            -webkit-user-select: text !important;
         }
         .eq-title {
             color: #00bfff;
@@ -78,7 +82,7 @@
         
         <div id="sidebar">
             <div class="eq-title">📊 リアルタイムフーリエ数式</div>
-            <div id="equation-box" id="equationBox">絵を描くとここに数式が表示されます</div>
+            <div id="equation-box">絵を描くとここに数式が表示されます。ドラッグで範囲選択してコピー可能です。</div>
         </div>
     </div>
 
@@ -120,7 +124,7 @@ function resetSystem() {
     path = [];
     time = 0;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    equationBox.innerText = "絵を描くとここに数式が表示されます";
+    equationBox.innerText = "絵を描くとここに数式が表示されます。ドラッグで範囲選択してコピー可能です。";
 }
 
 // --- お絵描きイベント ---
@@ -158,7 +162,7 @@ window.addEventListener('mouseup', () => {
     isDrawing = false;
     
     if (rawPoints.length > 2) {
-        if (rawPoints.length > 200) { // 数式表示が見やすくなるよう上限を200点に変更
+        if (rawPoints.length > 200) { 
             const step = Math.ceil(rawPoints.length / 200);
             rawPoints = rawPoints.filter((_, i) => i % step === 0);
         }
@@ -178,7 +182,6 @@ function drawEpicycles(x, y, fourier) {
         const prevY = y;
         const { freq, amp, phase } = fourier[i];
         
-        // 座標更新
         if (freq === 0) {
             x += amp * Math.cos(phase);
             y += amp * Math.sin(phase);
@@ -187,7 +190,6 @@ function drawEpicycles(x, y, fourier) {
             y += amp * Math.sin(freq * time + phase);
         }
 
-        // 描画
         if (freq !== 0 && amp > 0.5) {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
             ctx.beginPath();
@@ -201,7 +203,6 @@ function drawEpicycles(x, y, fourier) {
             ctx.stroke();
         }
 
-        // 数式テキストの生成（主要な上位10個の波＋αをリアルタイム表示）
         if (amp > 1.5 && i < 15) {
             const ampStr = amp.toFixed(1);
             const freqStr = freq === 0 ? "" : `*${freq}t`;
@@ -213,9 +214,7 @@ function drawEpicycles(x, y, fourier) {
         }
     }
 
-    // 右側のボックスに数式をリアルタイム反映
     equationBox.innerText = eqX + "\n+ ... (以下省略)";
-    
     return { x, y };
 }
 
@@ -228,7 +227,6 @@ function animate() {
     const v = drawEpicycles(0, 0, fourierX);
     path.unshift(v);
 
-    // 再現された線の描画
     ctx.strokeStyle = '#ff007f';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
