@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Fourier Epicycles Art</title>
+    <title>Fourier Epicycles Art with Equation</title>
     <style>
         body {
             margin: 0;
@@ -16,34 +16,76 @@
             height: 100vh;
             overflow: hidden;
         }
+        #container {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+        }
         canvas {
             border: 1px solid #333;
             background-color: #000;
             cursor: crosshair;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            border-radius: 8px;
+            border-radius: 6px;
+        }
+        #sidebar {
+            width: 320px;
+            height: 600px;
+            display: flex;
+            flex-direction: column;
         }
         h3 {
-            margin-bottom: 15px;
-            letter-spacing: 1px;
-            color: #ccc;
+            margin: 0 0 10px 0;
+            color: #fff;
+            font-size: 18px;
         }
         p {
-            margin-top: 10px;
-            font-size: 14px;
+            margin: 0 0 15px 0;
+            font-size: 13px;
             color: #888;
+        }
+        #equation-box {
+            flex-grow: 1;
+            background: #050505;
+            border: 1px solid #222;
+            border-radius: 6px;
+            padding: 15px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+            color: #00ff66;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+        .eq-title {
+            color: #00bfff;
+            font-weight: bold;
+            margin-bottom: 8px;
         }
     </style>
 </head>
 <body>
 
-    <h3>キャンバスをドラッグして一筆書きで絵を描こう</h3>
-    <canvas id="canvas" width="600" height="600"></canvas>
-    <p>※新しくクリックすると、自動で前の絵が消えて描き直せます</p>
+    <div id="container">
+        <div>
+            <h3>Fourier Epicycles Art</h3>
+            <p>キャンバスをドラッグして一筆書きで絵を描こう（クリックで引き直し）</p>
+            <canvas id="canvas" width="600" height="600"></canvas>
+        </div>
+        
+        <div id="sidebar">
+            <div class="eq-title">📊 リアルタイムフーリエ数式</div>
+            <div id="equation-box" id="equationBox">絵を描くとここに数式が表示されます</div>
+        </div>
+    </div>
 
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const equationBox = document.getElementById('equation-box');
 
 let rawPoints = []; 
 let fourierX = [];  
@@ -69,19 +111,16 @@ function dft(points) {
         im = im / N;
         X.push({ freq: k, amp: Math.sqrt(re * re + im * im), phase: Math.atan2(im, re) });
     }
-    // ここでソートしますが、周波数0（全体の重心）の位置を固定するため、
-    // 重心成分を外してからソートするか、今回はdraw側で位置を調整します
     return X.sort((a, b) => b.amp - a.amp);
 }
 
 function resetSystem() {
-    if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-    }
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
     rawPoints = [];
     path = [];
     time = 0;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    equationBox.innerText = "絵を描くとここに数式が表示されます";
 }
 
 // --- お絵描きイベント ---
@@ -119,8 +158,8 @@ window.addEventListener('mouseup', () => {
     isDrawing = false;
     
     if (rawPoints.length > 2) {
-        if (rawPoints.length > 400) {
-            const step = Math.ceil(rawPoints.length / 400);
+        if (rawPoints.length > 200) { // 数式表示が見やすくなるよう上限を200点に変更
+            const step = Math.ceil(rawPoints.length / 200);
             rawPoints = rawPoints.filter((_, i) => i % step === 0);
         }
         fourierX = dft(rawPoints);
@@ -129,15 +168,17 @@ window.addEventListener('mouseup', () => {
     }
 });
 
-// --- 周転円（エピサイクル）の計算と描画 ---
+// --- 周転円（エピサイクル）の計算・描画 ＆ 式の生成 ---
 function drawEpicycles(x, y, fourier) {
-    // 【修正点】スタート位置（x, y）を(0,0)にして、フーリエの直流成分（重心）から計算を始める
+    let eqX = "f(t) = \n  ";
+    let isFirstParam = true;
+
     for (let i = 0; i < fourier.length; i++) {
         const prevX = x;
         const prevY = y;
         const { freq, amp, phase } = fourier[i];
         
-        // 周波数が0の成分は回転せず、絵の「中心座標そのもの」を表す
+        // 座標更新
         if (freq === 0) {
             x += amp * Math.cos(phase);
             y += amp * Math.sin(phase);
@@ -146,7 +187,7 @@ function drawEpicycles(x, y, fourier) {
             y += amp * Math.sin(freq * time + phase);
         }
 
-        // 最初の移動（重心への移動）の円は描画せず、それ以降の回転する円だけを描画する
+        // 描画
         if (freq !== 0 && amp > 0.5) {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
             ctx.beginPath();
@@ -159,7 +200,22 @@ function drawEpicycles(x, y, fourier) {
             ctx.lineTo(x, y);
             ctx.stroke();
         }
+
+        // 数式テキストの生成（主要な上位10個の波＋αをリアルタイム表示）
+        if (amp > 1.5 && i < 15) {
+            const ampStr = amp.toFixed(1);
+            const freqStr = freq === 0 ? "" : `*${freq}t`;
+            const phaseStr = phase >= 0 ? `+${phase.toFixed(2)}` : `${phase.toFixed(2)}`;
+            
+            if (!isFirstParam) eqX += "\n+ ";
+            eqX += `${ampStr} * cis(${freqStr}${phaseStr})`;
+            isFirstParam = false;
+        }
     }
+
+    // 右側のボックスに数式をリアルタイム反映
+    equationBox.innerText = eqX + "\n+ ... (以下省略)";
+    
     return { x, y };
 }
 
@@ -169,8 +225,6 @@ function animate() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 【修正点】キャンバスの中心(width/2, height/2)から始めるのではなく、
-    // (0,0)から計算をスタートさせて、フーリエ内の絶対座標に委ねる
     const v = drawEpicycles(0, 0, fourierX);
     path.unshift(v);
 
